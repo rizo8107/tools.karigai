@@ -1,0 +1,158 @@
+.preview-container {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.slip {
+  background: white;
+  border: 2px solid #000;
+  padding: 0;
+  margin-bottom: 30px;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  page-break-after: always;
+  width: 800px;
+  overflow: hidden;
+}
+
+.slip-header {
+  display: flex;
+  width: 100%;
+}
+
+.ship-from {
+  width: 50%;
+  border-bottom: 2px solid #000;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.ship-to {
+  width: 50%;
+  border-right: 2px solid #000;
+  border-bottom: 2px solid #000;
+  padding: 0;
+  position: relative;
+}
+
+.ship-to-label {
+  background: #000;
+  color: white;
+  padding: 10px 20px;
+  font-weight: bold;
+  font-size: 28px;
+  display: inline-block;
+  margin-bottom: 15px;
+  border-radius: 0 0 10px 0;
+}
+
+.from-label {
+  padding: 10px 20px;
+  font-weight: bold;
+  font-size: 20px;
+  color: #555;
+}
+
+.address {
+  padding: 10px 20px 20px 20px;
+  font-size: 18px;
+  line-height: 1.5;
+}
+
+.ship-to .address {
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.slip-details {
+  display: flex;
+  width: 100%;
+}
+
+.details-left {
+  width: 50%;
+  border-right: 2px solid #000;
+}
+
+.details-right {
+  width: 50%;
+}
+
+.detail-row {
+  padding: 10px 20px;
+  display: flex;
+  border-bottom: 2px solid #000;
+}
+
+.detail-row:last-child {
+  border-bottom: none;
+}
+
+.detail-label {
+  font-weight: bold;
+  width: 40%;
+  font-size: 16px;
+  color: #555;
+}
+
+.detail-value {
+  width: 60%;
+  font-size: 16px;
+}
+
+.remarks {
+  padding: 10px 20px;
+  min-height: 100px;
+}
+
+.remarks-label {
+  font-weight: bold;
+  font-size: 16px;
+  margin-bottom: 10px;
+  color: #555;
+}
+
+.barcode-container {
+  padding: 20px;
+  border-top: 2px solid #000;
+  display: flex;
+}
+
+.barcode-column {
+  width: 55%;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.from-column {
+  width: 45%;
+  text-align: left;
+  padding-left: 20px;
+  border-left: 1px solid #ddd;
+}
+
+.phone-highlight {
+  background-color: #ffff00;
+  padding: 2px 5px;
+  font-weight: bold;
+  border-radius: 3px;
+}
+
+.barcode {
+  width: 90%;
+  max-height: 120px;
+}
+
+@media print {
+  body {
+    background: white;
+  }
+  .slip {
+    margin: 0;
+    box-shadow: none;
+  }
+}
