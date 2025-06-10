@@ -313,7 +313,7 @@ export default function CreateManifest() {
 
     // Create CSV content with only Tracking Numbers
     const csvContent = [
-      'Tracking Number', // Header
+      'TRACKING NUMBER', // Header
       ...manifestEntries.map(entry => entry.trackingNumber) // Data rows
     ].join('\n');
 
