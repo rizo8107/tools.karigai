@@ -5,10 +5,11 @@ import UpdateTracking from './components/UpdateTracking';
 import CreateManifest from './components/CreateManifest';
 import RepeatCampaign from './components/RepeatCampaign';
 import OrderList from './components/OrderList';
+import GstInvoiceGenerator from './components/GstInvoice';
 import Auth from './components/Auth';
-import { ArrowRight, Package, Printer, Truck, FileText, Users, List, LogOut } from 'lucide-react';
+import { ArrowRight, Package, Printer, Truck, FileText, Users, List, LogOut, FileSpreadsheet } from 'lucide-react';
 
-type TabType = 'order' | 'printslip' | 'tracking' | 'manifest' | 'campaign' | 'orderlist';
+type TabType = 'order' | 'printslip' | 'tracking' | 'manifest' | 'campaign' | 'orderlist' | 'gstinvoice';
 
 function App() {
   const [activeTab, setActiveTab] = useState<TabType>('order');
@@ -29,6 +30,7 @@ function App() {
     { id: 'manifest', label: 'Create Manifest', icon: <FileText size={20} /> },
     { id: 'campaign', label: 'Repeat Campaign', icon: <Users size={20} /> },
     { id: 'orderlist', label: 'Order List', icon: <List size={20} /> },
+    { id: 'gstinvoice', label: 'GST Invoice', icon: <FileSpreadsheet size={20} /> },
   ];
 
   const pageDescriptions: Record<TabType, string> = {
@@ -38,6 +40,7 @@ function App() {
     manifest: 'Create and manage shipping manifests',
     campaign: 'Manage repeat customer campaigns and feedback',
     orderlist: 'View and manage all manual orders',
+    gstinvoice: 'Generate GST invoices for orders',
   };
 
   // Handle logout
@@ -98,24 +101,19 @@ function App() {
         <main className={`flex-grow p-6 overflow-y-auto bg-gray-50 ${ 
           activeTab === 'order' ? 'flex justify-center items-start' : '' 
         }`}>
-          <div className={`w-full ${
+          <div className={`w-full ${ 
             activeTab === 'order' ? 'max-w-6xl' : 
             activeTab === 'tracking' || activeTab === 'manifest' ? 'max-w-3xl' : 
-            activeTab === 'campaign' ? 'max-w-5xl' : 'max-w-4xl'
+            activeTab === 'campaign' ? 'max-w-5xl' : 
+            activeTab === 'gstinvoice' ? 'max-w-7xl' : 'max-w-4xl'
           } mx-auto`}>
-            {activeTab === 'order' ? (
-              <OrderForm />
-            ) : activeTab === 'printslip' ? (
-              <PrintSlip />
-            ) : activeTab === 'tracking' ? (
-              <UpdateTracking />
-            ) : activeTab === 'manifest' ? (
-              <CreateManifest />
-            ) : activeTab === 'orderlist' ? (
-              <OrderList />
-            ) : (
-              <RepeatCampaign />
-            )}
+            {activeTab === 'order' && <OrderForm />}
+            {activeTab === 'printslip' && <PrintSlip />}
+            {activeTab === 'tracking' && <UpdateTracking />}
+            {activeTab === 'manifest' && <CreateManifest />}
+            {activeTab === 'campaign' && <RepeatCampaign />}
+            {activeTab === 'orderlist' && <OrderList />}
+            {activeTab === 'gstinvoice' && <GstInvoiceGenerator />}
           </div>
         </main>
         

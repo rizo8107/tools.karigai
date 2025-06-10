@@ -9,6 +9,7 @@ interface ManifestEntry {
   isSelected?: boolean;
   orderId?: string;
   customerName?: string;
+  carrierTitle?: string; // Added carrierTitle
   isFound?: boolean;
 }
 
@@ -16,6 +17,7 @@ interface ReferenceData {
   orderId: string;
   trackingNumber: string;
   customerName: string;
+  carrierTitle: string; // Added carrierTitle
 }
 
 export default function CreateManifest() {
@@ -29,6 +31,7 @@ export default function CreateManifest() {
   const [referenceLoaded, setReferenceLoaded] = useState(false);
   const [matchedCount, setMatchedCount] = useState(0);
   const [unmatchedCount, setUnmatchedCount] = useState(0);
+  const [carrierCounts, setCarrierCounts] = useState<Record<string, number>>({});
   
   const trackingInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -89,6 +92,16 @@ export default function CreateManifest() {
 
   }, [manifestEntries, referenceData]); // Added referenceData to dependencies
 
+  useEffect(() => {
+    const counts: Record<string, number> = {};
+    manifestEntries.forEach(entry => {
+      if (entry.isFound && entry.carrierTitle) {
+        counts[entry.carrierTitle] = (counts[entry.carrierTitle] || 0) + 1;
+      }
+    });
+    setCarrierCounts(counts);
+  }, [manifestEntries]);
+
   const handleTrackingKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && trackingNumber.trim()) {
       e.preventDefault();
@@ -122,20 +135,17 @@ export default function CreateManifest() {
   }, [duplicateCounts, setManifestEntries, setDuplicates]);
 
   // Match tracking number against reference data
-  const matchTrackingToReference = (tracking: string): Pick<ManifestEntry, 'orderId' | 'customerName' | 'isFound'> => {
+  const matchTrackingToReference = (tracking: string): Pick<ManifestEntry, 'orderId' | 'customerName' | 'carrierTitle' | 'isFound'> => {
     const match = referenceData.find(
       item => item.trackingNumber === tracking
     );
     
-    return match ? {
-      orderId: match.orderId,
-      customerName: match.customerName,
-      isFound: true
-    } : {
-      orderId: undefined,
-      customerName: undefined,
-      isFound: false
-    };
+    if (match) {
+      // Return only necessary fields to avoid overwriting existing entry data like isSelected
+      return { orderId: match.orderId, customerName: match.customerName, carrierTitle: match.carrierTitle, isFound: true };
+    } else {
+      return { orderId: undefined, customerName: undefined, isFound: false };
+    }
   };
 
   const addTrackingNumber = () => {
@@ -163,6 +173,7 @@ export default function CreateManifest() {
         isSelected: false,
         orderId: referenceMatch.orderId,
         customerName: referenceMatch.customerName,
+        carrierTitle: referenceMatch.carrierTitle,
         isFound: referenceMatch.isFound
       };
       setManifestEntries(prev => [newEntry, ...prev]);
@@ -174,7 +185,7 @@ export default function CreateManifest() {
     } else { // Duplicate scan
       setMessage(`Duplicate tracking number: ${trimmedNumber} (Scan count: ${newScanCount})`);
       setMessageType('error');
-      // The useEffect depending on duplicateCounts will handle updating isDuplicate flags
+      // The useEffect hook dependent on duplicateCounts will handle updating isDuplicate flags
       // and the duplicates array.
     }
     
@@ -204,8 +215,11 @@ export default function CreateManifest() {
         const orderIdIndex = headers.findIndex(h => 
           h.includes('order') || h.includes('id')
         );
-        const nameIndex = headers.findIndex(h => 
+        const customerNameIndex = headers.findIndex(h => 
           h.includes('name') || h.includes('customer')
+        );
+        const carrierTitleIndex = headers.findIndex(h => 
+          h.includes('carrier') || h.includes('title')
         );
         
         const startIndex = trackingIndex >= 0 && orderIdIndex >= 0 ? 1 : 0;
@@ -223,15 +237,17 @@ export default function CreateManifest() {
             ? values[orderIdIndex].trim() 
             : values[1].trim();
             
-          const customerName = nameIndex >= 0 
-            ? values[nameIndex].trim() 
+          const customerName = customerNameIndex >= 0 
+            ? values[customerNameIndex].trim() 
             : values[2].trim();
-          
-          newReference.push({
-            trackingNumber,
-            orderId,
-            customerName
-          });
+            
+          const carrierTitle = carrierTitleIndex >= 0 
+            ? values[carrierTitleIndex].trim() 
+            : '';
+
+          if (orderId && trackingNumber && customerName) {
+            newReference.push({ orderId, trackingNumber, customerName, carrierTitle });
+          }
         }
         
         setReferenceData(newReference);
@@ -372,6 +388,21 @@ export default function CreateManifest() {
           <div className="px-3 py-1 bg-amber-50 rounded-lg text-amber-700 font-medium">Duplicates: <b>{duplicates.length}</b></div>
         </div>
 
+        {/* Carrier Counts Display */}
+        {Object.keys(carrierCounts).length > 0 && (
+          <div className="mt-6 p-4 bg-indigo-50 rounded-lg shadow-sm border border-indigo-200">
+            <h3 className="text-lg font-semibold text-indigo-800 mb-3">Carrier Order Summary</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {Object.entries(carrierCounts).map(([carrier, count]) => (
+                <div key={carrier} className="bg-white p-3 rounded-md border border-gray-200 flex justify-between items-center shadow-xs hover:shadow-md transition-shadow">
+                  <span className="text-sm font-medium text-gray-700 truncate" title={carrier}>{carrier}</span>
+                  <span className="text-sm font-bold bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-full">{count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Tracking Number Input */}
         <div>
           <label htmlFor="trackingNumber" className="block text-sm font-medium text-gray-700 mb-1">
@@ -447,7 +478,7 @@ export default function CreateManifest() {
                     <div className="font-mono truncate">{entry.trackingNumber}</div>
                     {entry.orderId ? (
                       <div className="text-xs text-gray-600 truncate">
-                        {entry.customerName} • {entry.orderId}
+                        {entry.customerName} • {entry.orderId} {entry.carrierTitle ? `• ${entry.carrierTitle}` : ''}
                       </div>
                     ) : referenceLoaded ? (
                       <div className="text-xs text-amber-600 flex items-center">
