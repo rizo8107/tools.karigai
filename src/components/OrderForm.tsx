@@ -1,1067 +1,607 @@
 import { useState, useEffect } from 'react';
-import { Send, CheckCircle, AlertCircle, Clock, ClipboardList, ChevronLeft, ChevronRight, Trash2, Printer } from 'lucide-react';
-import { addOrder } from '../services/orderService';
+import { CheckCircle, AlertCircle, Loader, FilePlus2 } from 'lucide-react';
 
+// Define product interface
+interface Product {
+  name: string;
+  price: string;
+}
+
+// Define product item structure
+interface ProductItem {
+  productName: string;
+  quantity: number;
+  price: number;
+}
+
+// Define the structure of the form data
+interface OrderFormState {
+  orderNumber: string;
+  customerName: string;
+  phone: string;
+  address: string;
+  products: ProductItem[];
+  trackingNumber: string;
+  state: string;
+  shippingCost: number;
+}
+
+// Define the submission status
 type FormStatus = 'idle' | 'submitting' | 'success' | 'error';
 
-interface WebhookResponse {
-  [key: string]: string | number | boolean | null | WebhookResponse | Array<string | number | boolean | null | WebhookResponse>;
-}
+const initialFormState: OrderFormState = {
+  orderNumber: '',
+  customerName: '',
+  phone: '',
+  address: '',
+  products: [{ productName: '', quantity: 1, price: 0 }],
+  trackingNumber: '',
+  state: 'Tamil Nadu',
+  shippingCost: 50, // Default shipping cost for Tamil Nadu
+};
 
-interface OrderEntry {
-  orderNumber: string;
-  timestamp: string;
-  status: 'success' | 'error';
-  responseData?: WebhookResponse;
-}
-
-export default function OrderForm() {
-  // State for selected orders (for bulk printing)
-  const [selectedOrders, setSelectedOrders] = useState<{[key: string]: boolean}>({});
-  
-  // State for batch processing
-  const [orderQueue, setOrderQueue] = useState<string[]>([]);
-  const [currentOrderIndex, setCurrentOrderIndex] = useState<number>(-1);
-  const [isBatchProcessing, setIsBatchProcessing] = useState<boolean>(false);
-  const [batchProgress, setBatchProgress] = useState<{total: number, completed: number, success: number, failed: number}>({ 
-    total: 0, 
-    completed: 0, 
-    success: 0, 
-    failed: 0 
-  });
-  
-  // State for JSON preview
-  const [showPreview, setShowPreview] = useState<boolean>(false);
-  const [previewData, setPreviewData] = useState<string[]>([]);
-  
-  // Toggle selection of an order for bulk printing
-  const toggleOrderSelection = (orderIndex: number) => {
-    const indexKey = orderIndex.toString();
-    setSelectedOrders(prev => ({
-      ...prev,
-      [indexKey]: !prev[indexKey]
-    }));
-  };
-  
-  // Check if any orders are selected
-  const hasSelectedOrders = () => Object.values(selectedOrders).some(selected => selected);
-  
-  // Print all selected orders across all pages
-  const printSelectedOrders = () => {
-    // Get all selected orders from the entire order history, not just current page
-    const selectedOrdersList = orderHistory.filter((_, index) => selectedOrders[index.toString()]);
-    
-    if (selectedOrdersList.length === 0) {
-      alert('Please select at least one order to print');
-      return;
-    }
-    
-    // Create input text for all selected orders
-    const slipInputs = selectedOrdersList.map(order => {
-      const data = order.responseData || {};
-      
-      // Format date as DD-MM-YYYY
-      const orderDate = new Date(order.timestamp);
-      const formattedDate = `${orderDate.getDate().toString().padStart(2, '0')}-${(orderDate.getMonth() + 1).toString().padStart(2, '0')}-${orderDate.getFullYear()}`;
-      
-      const status = data.status || 'processing';
-      const orderId = data.order_number || order.orderNumber;
-      const qty = data.quantity || '1';
-      const mode = 'Manual';
-      const address = data.address || '-';
-      const customerName = data.customer_name || '-';
-      const phone = data.phone || '';
-      
-      // Combine the address and phone in the format expected by PrintSlip
-      const addressWithPhone = `${customerName}, ${address}  Phone ${phone}`;
-      
-      // Create the formatted input string
-      return `${status}\t${formattedDate}\t${orderId}\t${qty}\t\t${mode}\t${addressWithPhone}`;
-    }).join('\n');
-    
-    // Generate and print all slips
-    generateAndPrintSlip(slipInputs);
-    
-    // Clear selections after printing
-    setSelectedOrders({});
-  };
-  
-  // Clear all selections
-  const clearSelections = () => {
-    setSelectedOrders({});
-  };
-  
-  // Select all orders across all pages
-  const selectAllOrders = () => {
-    const newSelections: {[key: string]: boolean} = {};
-    orderHistory.forEach((_, index) => {
-      newSelections[index.toString()] = true;
-    });
-    setSelectedOrders(newSelections);
-  };
-  
-  // Check if all orders across all pages are selected
-  const areAllOrdersSelected = () => {
-    return orderHistory.length > 0 && orderHistory.every((_, index) => selectedOrders[index.toString()]);
-  };
-
-  // Function to print shipping slip for an order
-  const printShippingSlip = (order: OrderEntry) => {
-    const data = order.responseData || {};
-    if (!data.order_number && !order.orderNumber) {
-      alert('Cannot print slip: Missing order number');
-      return;
-    }
-    
-    // Format date as DD-MM-YYYY
-    const orderDate = new Date(order.timestamp);
-    const formattedDate = `${orderDate.getDate().toString().padStart(2, '0')}-${(orderDate.getMonth() + 1).toString().padStart(2, '0')}-${orderDate.getFullYear()}`;
-    
-    // Create the formatted input string for the slip generator
-    // Format: status\tdate\torderID\tqty\t\tmode\taddress with Phone number
-    const status = data.status || 'processing';
-    const orderId = data.order_number || order.orderNumber;
-    const qty = data.quantity || '1';
-    const mode = 'Manual';
-    const address = data.address || '-';
-    const customerName = data.customer_name || '-';
-    const phone = data.phone || '';
-    
-    // Combine the address and phone in the format expected by PrintSlip
-    const addressWithPhone = `${customerName}, ${address}  Phone ${phone}`;
-    
-    // Create the formatted input string
-    const slipInput = `${status}\t${formattedDate}\t${orderId}\t${qty}\t\t${mode}\t${addressWithPhone}`;
-    
-    // Generate and print the slip
-    generateAndPrintSlip(slipInput);
-  };
-  
-  // Function to generate and print shipping slip
-  const generateAndPrintSlip = (inputText: string) => {
-    const lines = inputText.split('\n');
-    let outputHtml = '';
-
-    const fromAddress = `TSMC Creations India\n14/5 2nd Floor, Sri Saara Towers,\nBalasundaram Road, Paapanaickenpalayam,\nCoimbatore, Tamil Nadu - 641037\nPhone: 8610554711`;
-
-    lines.forEach((line) => {
-      const parts = line.split('\t');
-      if (parts.length < 7) return;
-
-      const date = parts[1];
-      const orderId = parts[2];
-      const qty = parts[3] || '1';
-      const mode = parts[5];
-      const toRaw = parts.slice(6).join(' ');
-      const phoneMatch = toRaw.match(/Phone\s*=?\s*(\d+)/i);
-      const phone = phoneMatch ? phoneMatch[1] : '';
-      const toAddress = toRaw.replace(/Phone\s*=?\s*\d+/i, '').trim();
-      
-      // Calculate weight based on quantity (450g per packet)
-      const singlePacketWeight = 450; // in grams
-      const totalWeightGrams = parseInt(qty) * singlePacketWeight;
-      const totalWeightKg = (totalWeightGrams / 1000).toFixed(2) + ' KG';
-
-      const html = `
-        <div class="slip">
-          <div class="slip-header">
-            <div class="ship-to" style="width: 100%; border-right: none;">
-              <div class="ship-to-label">SHIP TO:</div>
-              <div class="address">${toAddress}\n${phone ? `<span class="phone-highlight">${phone}</span>` : ''}</div>
-            </div>
-          </div>
-          
-          <div class="slip-details">
-            <div class="details-left">
-              <div class="detail-row">
-                <div class="detail-label">ORDER ID:</div>
-                <div class="detail-value">${orderId}</div>
-              </div>
-              <div class="detail-row">
-                <div class="detail-label">WEIGHT:</div>
-                <div class="detail-value">${totalWeightKg} (${qty} × 450g)</div>
-              </div>
-              <div class="detail-row">
-                <div class="detail-label">DIMENSIONS:</div>
-                <div class="detail-value">-</div>
-              </div>
-              <div class="detail-row">
-                <div class="detail-label">SHIPPING DATE:</div>
-                <div class="detail-value">${date}</div>
-              </div>
-            </div>
-            <div class="details-right">
-              <div class="remarks">
-                <div class="remarks-label">REMARKS:</div>
-                <div>Mode: ${mode} | Qty: ${qty}</div>
-              </div>
-            </div>
-          </div>
-          
-          <div class="barcode-container">
-            <div class="barcode-column">
-              <svg class="barcode" jsbarcode-format="code128" jsbarcode-value="${orderId}" jsbarcode-textmargin="0" jsbarcode-fontoptions="bold"></svg>
-            </div>
-            <div class="from-column">
-              <div class="from-label" style="margin-bottom: 5px;">FROM:</div>
-              <img src="https://aurawill.in/cdn/shop/files/White-label.png?v=1741582343&width=200" style="height: 50px; object-fit: contain; margin-bottom: 10px;" alt="Aurawill Logo" />
-              <div class="address" style="font-size: 14px;">${fromAddress}</div>
-            </div>
-          </div>
-        </div>
-      `;
-      outputHtml += html;
-    });
-    
-    // Create a new window for printing
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      alert('Please allow pop-ups to print shipping slips');
-      return;
-    }
-    
-    // Write the HTML content to the new window
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Shipping Slip</title>
-          <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-          <style>
-            body {
-              font-family: Arial, sans-serif;
-              margin: 0;
-              padding: 20px;
-              background-color: #f5f5f5;
-            }
-            .slip {
-              width: 100%;
-              max-width: 800px;
-              margin: 0 auto 20px;
-              border: 2px solid #000;
-              background: white;
-              page-break-after: always;
-              box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            }
-            .slip-header {
-              display: flex;
-              border-bottom: 2px solid #000;
-            }
-            .ship-to, .ship-from {
-              padding: 20px;
-              width: 50%;
-            }
-            .ship-to {
-              border-right: 2px solid #000;
-            }
-            .ship-to-label, .ship-from-label, .from-label {
-              font-weight: bold;
-              font-size: 16px;
-              margin-bottom: 10px;
-              color: #555;
-            }
-            .address {
-              white-space: pre-line;
-              line-height: 1.5;
-            }
-            .slip-details {
-              display: flex;
-              border-bottom: 2px solid #000;
-            }
-            .details-left {
-              width: 60%;
-              padding: 20px;
-              border-right: 2px solid #000;
-            }
-            .details-right {
-              width: 40%;
-            }
-            .detail-row {
-              display: flex;
-              margin-bottom: 15px;
-            }
-            .detail-row:last-child {
-              margin-bottom: 0;
-            }
-            .detail-label {
-              width: 40%;
-              font-weight: bold;
-              font-size: 16px;
-              color: #555;
-            }
-            .detail-value {
-              width: 60%;
-              font-size: 16px;
-            }
-            .remarks {
-              padding: 10px 20px;
-              min-height: 100px;
-            }
-            .remarks-label {
-              font-weight: bold;
-              font-size: 16px;
-              margin-bottom: 10px;
-              color: #555;
-            }
-            .barcode-container {
-              padding: 20px;
-              border-top: 2px solid #000;
-              display: flex;
-            }
-            .barcode-column {
-              width: 55%;
-              text-align: center;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-            }
-            .from-column {
-              width: 45%;
-              text-align: left;
-              padding-left: 20px;
-              border-left: 1px solid #ddd;
-            }
-            .phone-highlight {
-              background-color: #ffff00;
-              padding: 2px 5px;
-              font-weight: bold;
-              border-radius: 3px;
-            }
-            .barcode {
-              width: 90%;
-              max-height: 120px;
-            }
-            @media print {
-              body {
-                background: white;
-              }
-              .slip {
-                margin: 0;
-                box-shadow: none;
-              }
-            }
-          </style>
-        </head>
-        <body>
-          <div id="output">${outputHtml}</div>
-          <script>
-            window.onload = function() {
-              JsBarcode(".barcode").init();
-              setTimeout(() => {
-                window.print();
-              }, 500);
-            };
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-  };
-
-  const [orderNumber, setOrderNumber] = useState('');
-  const [orderInput, setOrderInput] = useState('');
+const OrderForm = () => {
+  const [formData, setFormData] = useState<OrderFormState>(initialFormState);
   const [status, setStatus] = useState<FormStatus>('idle');
   const [errorMessage, setErrorMessage] = useState('');
-  const [orderHistory, setOrderHistory] = useState<OrderEntry[]>([]);
-  const [responseData, setResponseData] = useState<WebhookResponse | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const ordersPerPage = 5;
+  const [products, setProducts] = useState<Product[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+  const [bulkText, setBulkText] = useState('');
 
+  // Set the next order number when the component mounts and fetch products
   useEffect(() => {
-    const savedOrders = localStorage.getItem('orderHistory');
-    if (savedOrders) {
+    // Fetch the latest order from the API to determine the next order number
+    const fetchLatestOrderNumber = async () => {
       try {
-        setOrderHistory(JSON.parse(savedOrders));
-      } catch (err) {
-        console.error('Error parsing order history:', err);
-      }
-    }
-  }, []);
-
-  const indexOfLastOrder = currentPage * ordersPerPage;
-  const indexOfFirstOrder = indexOfLastOrder - ordersPerPage;
-  const currentOrders = orderHistory.slice(indexOfFirstOrder, indexOfLastOrder);
-  const totalPages = Math.ceil(orderHistory.length / ordersPerPage);
-
-  const paginate = (pageNumber: number) => setCurrentPage(pageNumber);
-
-  const clearOrderHistory = () => {
-    if (window.confirm('Are you sure you want to clear all order history?')) {
-      setOrderHistory([]);
-      localStorage.removeItem('orderHistory');
-    }
-  };
-
-  const saveOrder = async (entry: OrderEntry) => {
-    const updatedHistory = [entry, ...orderHistory].slice(0, 10); 
-    setOrderHistory(updatedHistory);
-    localStorage.setItem('orderHistory', JSON.stringify(updatedHistory));
-    
-    // If the order was successful, add it to the shared order list
-    if (entry.status === 'success' && entry.responseData) {
-      try {
-        // Add the order to the shared order service (now async with Supabase)
-        await addOrder({
-          ...entry.responseData,
-          orderNumber: entry.orderNumber
-        });
+        const response = await fetch('https://backend-n8n.7za6uc.easypanel.host/webhook/karigai_getorder');
+        if (!response.ok) throw new Error('Network response was not ok');
+        const result = await response.json();
+        const ordersData = Array.isArray(result) ? result : result.data || [];
+        
+        // Find the highest order number
+        let highestOrderNum = 1000; // Default starting point
+        
+        if (ordersData.length > 0) {
+          ordersData.forEach((order: { orderNumber?: string }) => {
+            if (order.orderNumber) {
+              // Extract the numeric part from formats like "ORD-1009"
+              const match = order.orderNumber.match(/\d+/);
+              if (match) {
+                const orderNum = parseInt(match[0], 10);
+                if (orderNum > highestOrderNum) {
+                  highestOrderNum = orderNum;
+                }
+              }
+            }
+          });
+        }
+        
+        // Use the highest order number + 1 for the next order
+        const nextOrderNum = highestOrderNum + 1;
+        localStorage.setItem('lastOrderNumber', nextOrderNum.toString());
+        setFormData(prev => ({ ...prev, orderNumber: `ORD-${nextOrderNum}` }));
       } catch (error) {
-        console.error('Error adding order to Supabase:', error);
-        // Continue with the flow even if Supabase fails
+        console.error("Failed to fetch latest order number:", error);
+        // Fallback to localStorage if API fails
+        const lastOrderNum = parseInt(localStorage.getItem('lastOrderNumber') || '1000', 10);
+        const nextOrderNum = lastOrderNum + 1;
+        setFormData(prev => ({ ...prev, orderNumber: `ORD-${nextOrderNum}` }));
       }
+    };
+    
+    fetchLatestOrderNumber();
+    // Fetch products from Google Sheet
+    fetchProducts();
+  }, []);
+  
+  // Function to fetch products from Google Sheet
+  const fetchProducts = async () => {
+    setIsLoadingProducts(true);
+    try {
+      const response = await fetch('https://docs.google.com/spreadsheets/d/e/2PACX-1vSS8MG6q7hcUmTtfhSLbsZsBd8zx_ZrSFr-VCvQ9Mt77QH22SUIuG9f3aPFoBFA7H_qUl9onq6B_NLf/pub?gid=0&single=true&output=csv');
+      if (!response.ok) {
+        throw new Error('Failed to fetch product data');
+      }
+      
+      const csvText = await response.text();
+      const products = parseCSV(csvText);
+      setProducts(products);
+    } catch (error) {
+      console.error('Error fetching products:', error);
+      setErrorMessage('Failed to load products. Please try again later.');
+    } finally {
+      setIsLoadingProducts(false);
     }
   };
   
-  // Delete a specific order from history
-  const deleteOrder = (orderIndex: number) => {
-    // Get the actual index in the full orderHistory array
-    const actualIndex = indexOfFirstOrder + orderIndex;
+  // Parse CSV data
+  const parseCSV = (csvText: string): Product[] => {
+    const lines = csvText.split('\n');
+    if (lines.length < 2) return [];
     
-    // Create a new array without the deleted order
-    const updatedHistory = [...orderHistory];
-    updatedHistory.splice(actualIndex, 1);
-    
-    // Update state and localStorage
-    setOrderHistory(updatedHistory);
-    localStorage.setItem('orderHistory', JSON.stringify(updatedHistory));
-    
-    // Clear selection for the deleted order
-    const newSelections = {...selectedOrders};
-    delete newSelections[orderIndex];
-    setSelectedOrders(newSelections);
-    
-    // Adjust current page if needed
-    if (currentOrders.length === 1 && currentPage > 1) {
-      setCurrentPage(currentPage - 1);
-    }
+    // Skip the header row and process the rest
+    return lines.slice(1).map(line => {
+      const [name, price] = line.split(',');
+      return { name: name?.trim() || '', price: price?.trim() || '₹0' };
+    }).filter(product => product.name); // Filter out any empty rows
   };
 
-  // Process a single order from the queue
-  const processNextOrder = async () => {
-    // Check if we're done processing all orders
-    if (orderQueue.length === 0) {
-      // Batch processing complete
-      setIsBatchProcessing(false);
-      setCurrentOrderIndex(-1);
-      setOrderNumber('');
-      setStatus('idle');
-      console.log('Batch processing complete');
-      return;
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    
+    // Handle product field changes
+    if (name.startsWith('products[')) {
+      // Extract the index and field name from the input name
+      // Format: products[0].productName or products[1].quantity
+      const matches = name.match(/products\[(\d+)\]\.(.+)/);
+      if (matches && matches.length === 3) {
+        const index = parseInt(matches[1], 10);
+        const field = matches[2];
+        
+        setFormData(prev => {
+          const updatedProducts = [...prev.products];
+          
+          // If this is a product selection, update price too
+          if (field === 'productName') {
+            const selectedProduct = products.find(p => p.name === value);
+            if (selectedProduct) {
+              // Extract numeric price from string like "₹150.00"
+              const numericPrice = parseFloat(selectedProduct.price.replace(/[^0-9.]/g, ''));
+              updatedProducts[index] = {
+                ...updatedProducts[index],
+                productName: value,
+                price: numericPrice
+              };
+            } else {
+              updatedProducts[index] = {
+                ...updatedProducts[index],
+                [field]: value
+              };
+            }
+          } else {
+            // For quantity, convert to number
+            if (field === 'quantity') {
+              updatedProducts[index] = {
+                ...updatedProducts[index],
+                [field]: parseInt(value, 10) || 1
+              };
+            } else {
+              updatedProducts[index] = {
+                ...updatedProducts[index],
+                [field]: value
+              };
+            }
+          }
+          
+          return { ...prev, products: updatedProducts };
+        });
+      }
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
+  };
+  
+  // Handle bulk text paste
+  const handleBulkTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setBulkText(e.target.value);
+  };
+  
+  // Parse and extract information from bulk text
+  const extractFormData = () => {
+    if (!bulkText.trim()) return;
+    
+    const extractedData: Partial<OrderFormState> = {};
+    const text = bulkText.toLowerCase();
+    
+    // Try to extract customer name (assumed to be after "name:" or at start of text)
+    const nameMatch = text.match(/name\s*:\s*([^\n,]+)/i) || 
+                     text.match(/^([^\n,]+)/i);
+    if (nameMatch && nameMatch[1]) {
+      extractedData.customerName = nameMatch[1].trim();
     }
     
-    // Take the first order from the queue
-    const currentOrderNumber = orderQueue[0];
-    console.log('Processing order:', currentOrderNumber, 'Queue length:', orderQueue.length);
+    // Try to extract phone (any sequence of 10-12 digits, possibly with separators)
+    const phoneMatch = bulkText.match(/(?:\+?\d{1,3}[- ]?)?\(?\d{3}\)?[- ]?\d{3}[- ]?\d{4}/g);
+    if (phoneMatch && phoneMatch[0]) {
+      extractedData.phone = phoneMatch[0].replace(/[^0-9]/g, '');
+    }
     
-    // Update UI state
-    setOrderNumber(currentOrderNumber);
-    setCurrentOrderIndex(batchProgress.completed);
-    setStatus('submitting');
-    
-    try {
-      // Process the current order with JSON format
-      const payload = { 
-        Order: currentOrderNumber,
-        isJsonFormat: true
-      };
+    // Try to extract address (assumed to be after "address:" or containing common address terms)
+    const addressRegex = /address\s*:\s*([^\n]+(?:\n[^\n]+)*)/i;
+    const addressMatch = text.match(addressRegex);
+    if (addressMatch && addressMatch[1]) {
+      extractedData.address = addressMatch[1].trim();
+    } else {
+      // Look for common address patterns if no explicit address label
+      const lines = bulkText.split('\n');
+      const addressLines = lines.filter(line => {
+        const l = line.toLowerCase();
+        return (l.includes('street') || l.includes('road') || 
+                l.includes('avenue') || l.includes('lane') || 
+                l.includes('drive') || l.includes('floor') ||
+                /\b\d+[a-z]?\s+[a-z\s]+,\s*[a-z\s]+/.test(l));
+      });
       
-      const response = await fetch('https://auto-n8n.9krcxo.easypanel.host/webhook/cbf01aea-9be4-4cba-9b1c-0a0367a6f823', {
+      if (addressLines.length > 0) {
+        extractedData.address = addressLines.join('\n');
+      }
+    }
+    
+    // Try to find products and quantities
+    const extractedProducts: ProductItem[] = [];
+    
+    // First, look for product names from our list
+    for (const product of products) {
+      if (text.includes(product.name.toLowerCase())) {
+        // Find quantity near this product mention
+        const productIndex = text.toLowerCase().indexOf(product.name.toLowerCase());
+        const nearbyText = text.substring(Math.max(0, productIndex - 20), Math.min(text.length, productIndex + product.name.length + 30));
+        
+        // Try to extract quantity for this specific product
+        const qtyMatch = nearbyText.match(/(?:qty|quantity|pcs)\s*:?\s*(\d+)/i) || 
+                        nearbyText.match(/\b(\d+)\s+(?:qty|piece|pc|pcs)\b/i) ||
+                        nearbyText.match(/\b(\d+)\s*x\b/i);
+        
+        const qty = qtyMatch && qtyMatch[1] ? parseInt(qtyMatch[1], 10) : 1;
+        
+        // Extract numeric price from string like "₹150.00"
+        const numericPrice = parseFloat(product.price.replace(/[^0-9.]/g, ''));
+        
+        extractedProducts.push({
+          productName: product.name,
+          quantity: qty,
+          price: numericPrice
+        });
+      }
+    }
+    
+    // If we found products, add them to extracted data
+    if (extractedProducts.length > 0) {
+      extractedData.products = extractedProducts;
+    }
+    
+    // Update form data with extracted information
+    setFormData(prev => ({
+      ...prev,
+      ...extractedData
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setStatus('submitting');
+    setErrorMessage('');
+
+    try {
+      const now = new Date();
+      // Calculate total amount including shipping cost
+      const subtotal = formData.products.reduce((sum, product) => sum + (product.price * product.quantity), 0);
+      const total = subtotal + formData.shippingCost;
+      
+      const payload = {
+        ...formData,
+        orderDate: now.toLocaleDateString('en-CA'), // YYYY-MM-DD
+        orderTime: now.toLocaleTimeString('en-GB'), // HH:MM:SS
+        subtotal: subtotal,
+        total: total,
+      };
+
+      const response = await fetch('https://backend-n8n.7za6uc.easypanel.host/webhook/karigai_order_creation', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
       });
-      
+
       if (!response.ok) {
-        throw new Error(`Error: ${response.status}`);
+        throw new Error(`Webhook failed with status: ${response.status}`);
       }
+
+      // On success, save the current order number and prepare the next one
+      const submittedOrderNumber = formData.orderNumber.replace('ORD-', '');
+      localStorage.setItem('lastOrderNumber', submittedOrderNumber);
       
-      const data = await response.json();
-      setResponseData(data);
       setStatus('success');
-      setErrorMessage('');
-      
-      // Save the order
-      await saveOrder({
-        orderNumber: currentOrderNumber,
-        timestamp: new Date().toISOString(),
-        status: 'success',
-        responseData: data
-      });
-      
-      // Update batch progress
-      setBatchProgress(prev => ({
-        ...prev,
-        completed: prev.completed + 1,
-        success: prev.success + 1
-      }));
-    } catch (error) {
-      console.error('Submission error:', error);
-      setStatus('error');
-      setErrorMessage(`Failed to submit order ${currentOrderNumber}. Continuing with next order...`);
-      
-      // Save the failed order
-      await saveOrder({
-        orderNumber: currentOrderNumber,
-        timestamp: new Date().toISOString(),
-        status: 'error'
-      });
-      
-      // Update batch progress
-      setBatchProgress(prev => ({
-        ...prev,
-        completed: prev.completed + 1,
-        failed: prev.failed + 1
-      }));
-    } finally {
-      // Remove the processed order from the queue
-      setOrderQueue(prevQueue => {
-        const newQueue = [...prevQueue];
-        newQueue.shift(); // Remove the first item
-        console.log('Updated queue:', newQueue);
-        return newQueue;
-      });
-      
-      // Wait before processing the next order
       setTimeout(() => {
+        const nextOrderNum = parseInt(submittedOrderNumber, 10) + 1;
         setStatus('idle');
-        processNextOrder();
-      }, 1500);
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    // Get the order input and clean it
-    const input = orderInput.trim();
-    
-    if (!input) {
-      setErrorMessage('Please enter at least one order number');
+        setFormData({
+          ...initialFormState,
+          orderNumber: `ORD-${nextOrderNum}`,
+        });
+      }, 3000);
+    } catch (error) {
       setStatus('error');
-      return;
-    }
-    
-    // Check if there are comma-separated values
-    if (input.includes(',')) {
-      // Split by comma and clean each order number
-      const orderNumbers = input.split(',').map(num => num.trim()).filter(num => num !== '');
-      
-      // Remove any duplicates
-      const uniqueOrderNumbers = [...new Set(orderNumbers)];
-      
-      if (uniqueOrderNumbers.length === 0) {
-        setErrorMessage('Please enter valid order numbers');
-        setStatus('error');
-        return;
-      }
-      
-      // Show preview of the JSON conversion
-      setPreviewData(uniqueOrderNumbers);
-      setShowPreview(true);
-      
-      // Clear the input field
-      setOrderInput('');
-      
-      // Don't start processing yet - wait for user confirmation
-      return;
-      
-    } else {
-      // Check if it might be JSON format (starts with [ and ends with ])
-      if (input.trim().startsWith('[') && input.trim().endsWith(']')) {
-        try {
-          // Try to parse as JSON
-          const orderArray = JSON.parse(input.trim());
-          if (Array.isArray(orderArray) && orderArray.length > 0) {
-            // Valid JSON array, set up batch processing
-            const validOrders = orderArray.map(item => String(item).trim()).filter(item => item !== '');
-            const uniqueOrders = [...new Set(validOrders)];
-            
-            // Set up batch processing
-            setOrderQueue(uniqueOrders);
-            setCurrentOrderIndex(-1);
-            setIsBatchProcessing(true);
-            setBatchProgress({
-              total: uniqueOrders.length,
-              completed: 0,
-              success: 0,
-              failed: 0
-            });
-            
-            // Start processing
-            setTimeout(() => processNextOrder(), 100);
-            setOrderInput('');
-            return;
-          }
-        } catch (error) {
-          // Not valid JSON, continue with single order processing
-          console.log('Invalid JSON format, processing as single order:', error);
-        }
-      }
-      
-      // Single order processing
-      setOrderNumber(input);
-      setOrderInput('');
-      
-      const payload = { 
-        Order: input,
-        isJsonFormat: true
-      };
-      
-      try {
-        setStatus('submitting');
-        
-        const response = await fetch('https://auto-n8n.9krcxo.easypanel.host/webhook/cbf01aea-9be4-4cba-9b1c-0a0367a6f823', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(payload),
-        });
-        
-        if (!response.ok) {
-          throw new Error(`Error: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        setResponseData(data);
-        setStatus('success');
-        setErrorMessage('');
-        
-        await saveOrder({
-          orderNumber: input,
-          timestamp: new Date().toISOString(),
-          status: 'success',
-          responseData: data
-        });
-        
-        setTimeout(() => {
-          setStatus('idle');
-          setOrderNumber('');
-        }, 3000);
-        
-      } catch (error) {
-        console.error('Submission error:', error);
-        setStatus('error');
-        setErrorMessage('Failed to submit order. Please try again.');
-        
-        await saveOrder({
-          orderNumber: input,
-          timestamp: new Date().toISOString(),
-          status: 'error'
-        });
+      if (error instanceof Error) {
+        setErrorMessage(error.message);
+      } else {
+        setErrorMessage('An unknown error occurred.');
       }
     }
   };
-
-  // State variables are already declared at the top of the component
 
   return (
-    <div className="space-y-6 max-w-full">
-      <div className="bg-white rounded-2xl shadow-lg p-6 md:p-8">
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="space-y-2">
-            <label 
-              htmlFor="orderInput" 
-              className="block text-sm font-medium text-gray-700"
-            >
-              Order Number
-            </label>
-            <input
-              type="text"
-              id="orderInput"
-              value={orderInput}
-              onChange={(e) => setOrderInput(e.target.value)}
-              placeholder="Enter order numbers"
-              disabled={isBatchProcessing || status === 'submitting' || showPreview}
-              className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 outline-none"
-              aria-describedby={errorMessage ? "error-message" : undefined}
-            />
-            {errorMessage && (
-              <p id="error-message" className="text-red-600 text-sm mt-1 flex items-center gap-1">
-                <AlertCircle size={14} />
-                {errorMessage}
-              </p>
-            )}
+    <div className="w-full mx-auto p-2 sm:p-4 lg:p-6">
+      <div className="bg-white rounded-lg md:rounded-2xl shadow-lg p-4 md:p-6 lg:p-8">
+        <div className="flex items-center gap-2 md:gap-4 mb-4 md:mb-8">
+          <div className="bg-indigo-100 text-indigo-600 p-2 md:p-3 rounded-full">
+            <FilePlus2 size={20} className="md:w-6 md:h-6" />
           </div>
-          
-          {/* JSON Preview Section */}
-          {showPreview && (
-            <div className="mt-4 p-4 border border-blue-200 bg-blue-50 rounded-lg">
-              <h3 className="text-lg font-medium text-blue-800 mb-2">JSON Preview</h3>
-              <p className="text-sm text-blue-700 mb-3">The following orders will be processed:</p>
-              <pre className="bg-white p-3 rounded border border-blue-200 text-sm overflow-auto max-h-60 mb-4">
-                {JSON.stringify(previewData, null, 2)}
-              </pre>
-              <div className="flex justify-end gap-3">
-                <button 
-                  type="button" 
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
-                  onClick={() => {
-                    setShowPreview(false);
-                    setPreviewData([]);
-                  }}
-                >
-                  Cancel
-                </button>
-                <button 
-                  type="button" 
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                  onClick={() => {
-                    // Start batch processing
-                    setShowPreview(false);
-                    setOrderQueue(previewData);
-                    setCurrentOrderIndex(-1);
-                    setIsBatchProcessing(true);
-                    setBatchProgress({
-                      total: previewData.length,
-                      completed: 0,
-                      success: 0,
-                      failed: 0
-                    });
-                    setTimeout(() => processNextOrder(), 100);
-                  }}
-                >
-                  Process Orders
-                </button>
-              </div>
-            </div>
-          )}
-          
-          {isBatchProcessing && (
-            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <h4 className="text-sm font-medium text-blue-700 mb-2">Batch Processing</h4>
-              <div className="flex justify-between text-xs text-blue-600 mb-1">
-                <span>Processing order {currentOrderIndex + 1} of {batchProgress.total}</span>
-                <span>
-                  {batchProgress.completed}/{batchProgress.total} completed 
-                  ({batchProgress.success} success, {batchProgress.failed} failed)
-                </span>
-              </div>
-              <div className="w-full bg-blue-200 rounded-full h-2">
-                <div 
-                  className="bg-blue-600 h-2 rounded-full" 
-                  style={{ width: `${(batchProgress.completed / batchProgress.total) * 100}%` }}
-                ></div>
-              </div>
-              <div className="mt-2 text-sm">
-                <span className="font-medium">Current order: </span>
-                {orderNumber || 'Preparing next order...'}
-              </div>
-            </div>
-          )}
-          
-          <button
-            type="submit"
-            disabled={!orderInput || isBatchProcessing || status === 'submitting' || showPreview}
-            className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-white font-medium transition-all duration-300 ${
-              status === 'success' 
-                ? 'bg-green-500 hover:bg-green-600' 
-                : status === 'error'
-                ? 'bg-red-500 hover:bg-red-600'
-                : status === 'submitting'
-                ? 'bg-blue-400 cursor-not-allowed'
-                : isBatchProcessing || showPreview
-                ? 'bg-gray-400 cursor-not-allowed'
-                : 'bg-blue-500 hover:bg-blue-600'
-            }`}
-          >
-            {status === 'submitting' ? (
-              <>
-                <Clock className="animate-pulse" size={18} />
-                Processing...
-              </>
-            ) : status === 'success' ? (
-              <>
-                <CheckCircle size={18} />
-                Order Submitted
-              </>
-            ) : status === 'error' ? (
-              <>
-                <AlertCircle size={18} />
-                Try Again
-              </>
-            ) : (
-              <>
-                <Send size={18} />
-                Submit Order
-              </>
-            )}
-          </button>
-        </form>
-        
-        {status === 'success' && responseData && (
-          <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-800 animate-fade-in flex flex-col gap-3">
-            <div className="flex items-start gap-3">
-              <CheckCircle className="text-green-500 shrink-0 mt-0.5" size={18} />
-              <p>
-                <span className="font-medium block">Order successfully submitted!</span>
-                <span className="text-sm">Order #{orderNumber} has been received.</span>
-              </p>
-            </div>
-            
-            <div className="mt-3 pt-3 border-t border-green-200">
-              <h3 className="font-medium text-sm mb-2">Order Details:</h3>
-              <div className="bg-white p-4 rounded border border-green-200 shadow-sm">
-                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                  <div>
-                    <dt className="text-gray-500 font-medium">Order Number</dt>
-                    <dd className="font-semibold text-gray-900">{String(responseData.order_number || orderNumber)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-gray-500 font-medium">Order ID</dt>
-                    <dd className="font-semibold text-gray-900">{String(responseData.order_id || '-')}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-gray-500 font-medium">Customer</dt>
-                    <dd className="font-semibold text-gray-900">{String(responseData.customer_name || '-')}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-gray-500 font-medium">Phone</dt>
-                    <dd className="font-semibold text-gray-900">{String(responseData.phone || '-')}</dd>
-                  </div>
-                  <div className="sm:col-span-2">
-                    <dt className="text-gray-500 font-medium">Address</dt>
-                    <dd className="font-semibold text-gray-900">{String(responseData.address || '-')}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-gray-500 font-medium">Product</dt>
-                    <dd className="font-semibold text-gray-900">{String(responseData.product || '-')}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-gray-500 font-medium">Quantity</dt>
-                    <dd className="font-semibold text-gray-900">{String(responseData.quantity || '-')}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-gray-500 font-medium">Status</dt>
-                    <dd className="font-semibold text-gray-900 capitalize">{String(responseData.status || '-')}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-gray-500 font-medium">Price</dt>
-                    <dd className="font-semibold text-gray-900">₹{String(responseData.price || '-')}</dd>
-                  </div>
-                </dl>
-              </div>
-            </div>
+          <div>
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900">Create a New Order</h1>
+            <p className="text-sm md:text-base text-gray-500">Fill in the details below to create a new order.</p>
           </div>
-        )}
-      </div>
+        </div>
 
-      {orderHistory.length > 0 ? (
-        <div className="bg-white rounded-2xl shadow-lg p-4 md:p-6 w-full overflow-visible">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
-            <h2 className="text-xl font-semibold text-gray-900">Recent Orders</h2>
-            
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              {/* Selection Controls */}
-              <div className="flex items-center mr-2">
-                <input
-                  type="checkbox"
-                  id="select-all-orders"
-                  checked={areAllOrdersSelected()}
-                  onChange={areAllOrdersSelected() ? clearSelections : selectAllOrders}
-                  className="h-4 w-4 text-blue-600 rounded focus:ring-blue-500"
-                  disabled={orderHistory.length === 0}
-                />
-                <label htmlFor="select-all-orders" className="ml-2 text-sm text-gray-700">
-                  Select All
-                </label>
-              </div>
-              
-              {/* Action Buttons */}
-              {hasSelectedOrders() && (
-                <>
-                  <button
-                    onClick={printSelectedOrders}
-                    className="text-sm bg-blue-500 hover:bg-blue-600 text-white py-1 px-3 rounded-md flex items-center gap-1"
-                  >
-                    <Printer size={14} />
-                    Print Selected
-                  </button>
-                  <button
-                    onClick={clearSelections}
-                    className="text-sm text-gray-600 hover:text-gray-800 flex items-center gap-1"
-                  >
-                    Clear Selection
-                  </button>
-                </>
-              )}
-              <button 
-                onClick={clearOrderHistory}
-                className="text-sm text-red-600 hover:text-red-800 flex items-center gap-1"
+        <form onSubmit={handleSubmit}>
+          {/* Quick Fill Text Area */}
+          <div className="mb-6 md:mb-8 p-3 md:p-6 bg-blue-50 rounded-lg border border-blue-200">
+            <h2 className="text-base md:text-lg font-semibold text-blue-800 mb-2 md:mb-4">Quick Fill from Text</h2>
+            <p className="text-xs md:text-sm text-blue-600 mb-2 md:mb-3">Paste customer details or order information below for automatic extraction.</p>
+            <div className="space-y-3 md:space-y-4">
+              <textarea 
+                placeholder="Paste order information here (name, phone, address, products, quantities)..."
+                className="w-full px-3 py-2 md:px-4 md:py-3 border border-blue-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[100px] md:min-h-[120px] text-sm md:text-base"
+                value={bulkText}
+                onChange={handleBulkTextChange}
+              />
+              <button
+                type="button"
+                onClick={extractFormData}
+                className="w-full md:w-auto px-3 py-2 md:px-4 md:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
               >
-                <Trash2 size={14} />
-                Clear History
+                Extract Information
               </button>
             </div>
           </div>
           
-          {/* Horizontal Card Layout for All Screen Sizes */}
-          <div className="space-y-3 w-full">
-            {currentOrders.map((order, index) => {
-              const data = order.responseData || {};
-              return (
-                <div key={index} className={`border ${selectedOrders[index.toString()] ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'} rounded-lg p-3 shadow-sm hover:shadow-md transition-all duration-200 w-full`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center">
-                      <input
-                        type="checkbox"
-                        id={`order-select-${index}`}
-                        checked={!!selectedOrders[index.toString()]}
-                        onChange={() => toggleOrderSelection(index)}
-                        className="h-4 w-4 text-blue-600 rounded focus:ring-blue-500"
-                      />
-                      <label htmlFor={`order-select-${index}`} className="ml-2 text-sm text-gray-700 cursor-pointer">
-                        {order.status === 'success' ? `Order #${data.order_number || order.orderNumber}` : 'Failed Order'}
-                      </label>
-                    </div>
-                    <button
+          <div className="space-y-4 md:space-y-6">
+            <div>
+              <label htmlFor="orderNumber" className="block text-xs md:text-sm font-medium text-gray-700 mb-1">Order Number</label>
+              <input
+                type="text"
+                name="orderNumber"
+                id="orderNumber"
+                value={formData.orderNumber}
+                readOnly
+                className="w-full px-3 py-2 md:px-4 md:py-2 bg-gray-100 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 cursor-not-allowed text-sm md:text-base"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-x-8 md:gap-y-6">
+              {/* Customer Details */}
+              <div className="space-y-3 md:space-y-4 p-3 md:p-6 bg-gray-50 rounded-lg border border-gray-200">
+                <h2 className="text-base md:text-lg font-semibold text-gray-800 mb-2 md:mb-4">Customer Shipping Details</h2>
+                <div>
+                  <label htmlFor="customerName" className="block text-xs md:text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                  <input type="text" name="customerName" id="customerName" value={formData.customerName} onChange={handleChange} className="w-full px-3 py-2 md:px-4 md:py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm md:text-base" required />
+                </div>
+                <div>
+                  <label htmlFor="phone" className="block text-xs md:text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                  <input type="tel" name="phone" id="phone" value={formData.phone} onChange={handleChange} className="w-full px-3 py-2 md:px-4 md:py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm md:text-base" required />
+                </div>
+                <div>
+                  <label htmlFor="address" className="block text-xs md:text-sm font-medium text-gray-700 mb-1">Shipping Address</label>
+                  <textarea name="address" id="address" rows={3} value={formData.address} onChange={handleChange} className="w-full px-3 py-2 md:px-4 md:py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm md:text-base" required></textarea>
+                </div>
+                <div>
+                  <label htmlFor="state" className="block text-xs md:text-sm font-medium text-gray-700 mb-1">State</label>
+                  <select
+                    name="state"
+                    id="state"
+                    value={formData.state}
+                    onChange={(e) => {
+                      const selectedState = e.target.value;
+                      const shippingCost = selectedState === 'Tamil Nadu' ? 50 : 60;
+                      setFormData(prev => ({ ...prev, state: selectedState, shippingCost }))
+                    }}
+                    className="w-full px-3 py-2 md:px-4 md:py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm md:text-base"
+                    required
+                  >
+                    <option value="Tamil Nadu">Tamil Nadu</option>
+                    <option value="Kerala">Kerala</option>
+                    <option value="Karnataka">Karnataka</option>
+                    <option value="Andhra Pradesh">Andhra Pradesh</option>
+                    <option value="Telangana">Telangana</option>
+                    <option value="Maharashtra">Maharashtra</option>
+                    <option value="Gujarat">Gujarat</option>
+                    <option value="Rajasthan">Rajasthan</option>
+                    <option value="Punjab">Punjab</option>
+                    <option value="Haryana">Haryana</option>
+                    <option value="Uttar Pradesh">Uttar Pradesh</option>
+                    <option value="Madhya Pradesh">Madhya Pradesh</option>
+                    <option value="Bihar">Bihar</option>
+                    <option value="West Bengal">West Bengal</option>
+                    <option value="Odisha">Odisha</option>
+                    <option value="Assam">Assam</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Product & Tracking Details */}
+              <div className="space-y-3 md:space-y-4 p-3 md:p-6 bg-gray-50 rounded-lg border border-gray-200">
+                <h2 className="text-base md:text-lg font-semibold text-gray-800 mb-2 md:mb-4">Product & Tracking</h2>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-md font-medium text-gray-800">Products</h3>
+                    <button 
+                      type="button" 
                       onClick={() => {
-                        if (window.confirm('Are you sure you want to delete this order from history?')) {
-                          deleteOrder(index);
-                        }
+                        setFormData(prev => ({
+                          ...prev,
+                          products: [...prev.products, { productName: '', quantity: 1, price: 0 }]
+                        }));
                       }}
-                      className="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-50 transition-colors"
-                      title="Delete this order"
-                      aria-label="Delete order"
+                      className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-md hover:bg-indigo-200 text-sm font-medium"
                     >
-                      <Trash2 size={16} />
+                      + Add Product
                     </button>
                   </div>
-                  <div className="flex flex-col md:flex-row md:items-center">
-                    {/* Order Header - Always at the top/left */}
-                    <div className="md:w-1/4 pr-4">
-                      <div className="flex justify-between md:flex-col md:justify-start">
-                        <div>
-                          <div className="font-medium text-gray-900">Order #{String(data.order_number || order.orderNumber)}</div>
-                          <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-                            <Clock size={12} />
-                            {new Date(order.timestamp).toLocaleDateString()}
-                          </div>
-                        </div>
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs md:mt-2 ${
-                          order.status === 'success' 
-                            ? 'bg-green-100 text-green-800' 
-                            : 'bg-red-100 text-red-800'
-                        }`}>
-                          {order.status === 'success' ? (
-                            <CheckCircle size={12} />
-                          ) : (
-                            <AlertCircle size={12} />
-                          )}
-                          {order.status === 'success' ? 'Success' : 'Failed'}
-                        </span>
-                      </div>
-                      
-                      <div className="mt-2 md:mt-3">
-                        <div className="text-xs text-gray-500 mb-1">Customer</div>
-                        <div className="font-medium text-gray-800 text-sm">{String(data.customer_name || '-')}</div>
-                      </div>
-                    </div>
-                    
-                    {/* Divider - Vertical for desktop, Horizontal for mobile */}
-                    <div className="hidden md:block md:w-px md:bg-gray-200 md:h-full md:mx-3"></div>
-                    <div className="md:hidden my-2 border-t border-gray-200"></div>
-                    
-                    {/* Order Details - Middle section */}
-                    <div className="md:flex-1">
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                        <div className="col-span-2 md:col-span-3">
-                          <div className="text-xs text-gray-500 mb-1">Product</div>
-                          <div className="font-medium text-gray-800 text-sm truncate" title={String(data.product || '-')}>
-                            {String(data.product || '-')}
-                          </div>
-                        </div>
-                        
-                        <div className="col-span-2 md:col-span-3">
-                          <div className="text-xs text-gray-500 mb-1">Address</div>
-                          <div className="font-medium text-gray-800 break-words text-sm">{String(data.address || '-')}</div>
-                        </div>
-                        
-                        {data.phone && (
-                          <div className="col-span-2 md:col-span-3">
-                            <div className="text-xs text-gray-500 mb-1">Phone</div>
-                            <div className="font-medium text-gray-800 text-sm">{String(data.phone)}</div>
-                          </div>
+                  
+                  {formData.products.map((product, index) => (
+                    <div key={index} className="p-3 md:p-4 border border-gray-200 rounded-lg bg-gray-50">
+                      <div className="flex justify-between items-center mb-2 md:mb-3">
+                        <h4 className="text-sm md:text-base font-medium text-gray-700">Product {index + 1}</h4>
+                        {formData.products.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormData(prev => ({
+                                ...prev,
+                                products: prev.products.filter((_, i) => i !== index)
+                              }));
+                            }}
+                            className="text-red-500 hover:text-red-700 text-xs md:text-sm"
+                          >
+                            Remove
+                          </button>
                         )}
                       </div>
+                      
+                      <div className="space-y-3">
+                        <div>
+                          <label htmlFor={`products[${index}].productName`} className="block text-sm font-medium text-gray-700 mb-1">Product Name</label>
+                          {isLoadingProducts ? (
+                            <div className="flex items-center w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50">
+                              <Loader className="animate-spin h-4 w-4 mr-2 text-indigo-500" />
+                              <span className="text-gray-500">Loading products...</span>
+                            </div>
+                          ) : (
+                            <select 
+                              name={`products[${index}].productName`}
+                              id={`products[${index}].productName`}
+                              value={product.productName}
+                              onChange={handleChange}
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                              required
+                            >
+                              <option value="">Select a product</option>
+                              {products.map((p, i) => (
+                                <option key={i} value={p.name}>
+                                  {p.name} - {p.price}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+                          <div>
+                            <label htmlFor={`products[${index}].quantity`} className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                            <input 
+                              type="number" 
+                              name={`products[${index}].quantity`} 
+                              id={`products[${index}].quantity`} 
+                              min="1" 
+                              value={product.quantity} 
+                              onChange={handleChange} 
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" 
+                              required 
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor={`products[${index}].price`} className="block text-sm font-medium text-gray-700 mb-1">Price (per item)</label>
+                            <input 
+                              type="number" 
+                              name={`products[${index}].price`} 
+                              id={`products[${index}].price`} 
+                              min="0" 
+                              step="0.01" 
+                              value={product.price} 
+                              onChange={handleChange} 
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-100" 
+                              readOnly 
+                            />
+                          </div>
+                        </div>
+                        <div className="text-right text-sm font-medium text-gray-700">
+                          Subtotal: ₹{(product.price * product.quantity).toFixed(2)}
+                        </div>
+                      </div>
                     </div>
-                    
-                    {/* Order Metrics - Right section */}
-                    <div className="md:w-1/6 md:pl-3 mt-2 md:mt-0">
-                      <div className="flex justify-between md:flex-col md:space-y-3">
-                        <div>
-                          <div className="text-xs text-gray-500 mb-1">Quantity</div>
-                          <div className="font-medium text-gray-800 text-sm">{String(data.quantity || '-')}</div>
+                  ))}
+                  
+                  {formData.products.length > 0 && (
+                    <div className="flex justify-end pt-2">
+                      <div className="text-right">
+                        <div className="flex flex-col space-y-1">
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-500 mr-4">Subtotal:</span>
+                            <span className="text-sm font-medium text-gray-700">
+                              ₹{formData.products.reduce((sum, product) => sum + (product.price * product.quantity), 0).toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-sm font-medium text-gray-500 mr-4">Shipping ({formData.state === 'Tamil Nadu' ? 'Tamil Nadu' : 'Other States'}):</span>
+                            <span className="text-sm font-medium text-gray-700">₹{formData.shippingCost.toFixed(2)}</span>
+                          </div>
+                          <div className="border-t border-gray-200 pt-1 mt-1">
+                            <span className="text-sm font-medium text-gray-500 mr-4">Total Order Value:</span>
+                            <p className="text-lg font-bold text-indigo-700">
+                              ₹{(formData.products.reduce((sum, product) => sum + (product.price * product.quantity), 0) + formData.shippingCost).toFixed(2)}
+                            </p>
+                          </div>
                         </div>
-                        
-                        <div>
-                          <div className="text-xs text-gray-500 mb-1">Price</div>
-                          <div className="font-medium text-gray-800 text-sm">{data.price ? `₹${String(data.price)}` : '-'}</div>
-                        </div>
-                        
-                        {/* Print Slip Button */}
-                        <div className="mt-3 md:mt-4">
-                          <button
-                            onClick={() => printShippingSlip(order)}
-                            className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 transition-colors"
-                            title="Print shipping slip for this order"
-                          >
-                            <Printer size={16} />
-                            Print Slip
-                          </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label htmlFor="trackingNumber" className="block text-sm font-medium text-gray-700 mb-1">Tracking Number (Optional)</label>
+                  <input type="text" name="trackingNumber" id="trackingNumber" value={formData.trackingNumber} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Submission Button & Status Messages */}
+          <div className="mt-6 md:mt-8 pt-4 md:pt-5 border-t border-gray-200">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-3 md:gap-4">
+              <div className="w-full md:w-1/2">
+                {status === 'success' && (
+                  <div className="rounded-md bg-green-50 p-4">
+                    <div className="flex">
+                      <div className="flex-shrink-0">
+                        <CheckCircle className="h-5 w-5 text-green-400" />
+                      </div>
+                      <div className="ml-3">
+                        <p className="text-sm font-medium text-green-800">Order submitted successfully!</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {status === 'error' && (
+                  <div className="rounded-md bg-red-50 p-4">
+                    <div className="flex">
+                      <div className="flex-shrink-0">
+                        <AlertCircle className="h-5 w-5 text-red-400" />
+                      </div>
+                      <div className="ml-3">
+                        <h3 className="text-sm font-medium text-red-800">Submission failed</h3>
+                        <div className="mt-2 text-sm text-red-700">
+                          <p>{errorMessage}</p>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-          
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex justify-center mt-6 gap-2">
-              <button 
-                onClick={() => paginate(Math.max(1, currentPage - 1))}
-                disabled={currentPage === 1}
-                className={`p-2 rounded ${currentPage === 1 ? 'text-gray-400 cursor-not-allowed' : 'text-blue-600 hover:bg-blue-50'}`}
-                aria-label="Previous page"
+                )}
+              </div>
+              <button
+                type="submit"
+                disabled={status === 'submitting'}
+                className="w-full md:w-auto flex justify-center items-center px-6 md:px-8 py-2 md:py-3 border border-transparent text-sm md:text-base font-medium rounded-lg shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-400 transition-all duration-300"
               >
-                <ChevronLeft size={18} />
-              </button>
-              
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(number => (
-                <button
-                  key={number}
-                  onClick={() => paginate(number)}
-                  className={`w-8 h-8 rounded-full ${currentPage === number ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-100'}`}
-                >
-                  {number}
-                </button>
-              ))}
-              
-              <button 
-                onClick={() => paginate(Math.min(totalPages, currentPage + 1))}
-                disabled={currentPage === totalPages}
-                className={`p-2 rounded ${currentPage === totalPages ? 'text-gray-400 cursor-not-allowed' : 'text-blue-600 hover:bg-blue-50'}`}
-                aria-label="Next page"
-              >
-                <ChevronRight size={18} />
+                {status === 'submitting' ? (
+                  <><Loader className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" /> Submitting...</>
+                ) : 'Submit Order'}
               </button>
             </div>
-          )}
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl shadow-lg p-6 md:p-8 text-center w-full">
-          <div className="flex flex-col items-center justify-center py-8">
-            <ClipboardList size={48} className="text-gray-300 mb-4" />
-            <h3 className="text-xl font-medium text-gray-500 mb-2">No Orders Yet</h3>
-            <p className="text-gray-500 max-w-sm">Submit an order number above to see your order history here.</p>
           </div>
-        </div>
-      )}
+        </form>
+      </div>
     </div>
   );
-}
+};
+
+export default OrderForm;

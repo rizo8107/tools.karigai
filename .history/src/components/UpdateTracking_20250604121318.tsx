@@ -101,7 +101,7 @@ export default function UpdateTracking() {
 
     try {
       // Try to fetch from the API
-      const response = await fetch('https://auto-n8n.9krcxo.easypanel.host/webhook-change/268073e1-6504-48d4-b4ac-1a66a51865a2', {
+      const response = await fetch('https://auto-n8n.9krcxo.easypanel.host/webhook/268073e1-6504-48d4-b4ac-1a66a51865a2', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -127,13 +127,13 @@ export default function UpdateTracking() {
   };
 
   return (
-    <div className="bg-white rounded-lg md:rounded-2xl shadow-lg p-4 md:p-6 w-full">
-      <h2 className="text-xl md:text-2xl font-semibold text-gray-900 mb-4 md:mb-6">Update Tracking Information</h2>
+    <div className="bg-white rounded-2xl shadow-lg p-6 w-full">
+      <h2 className="text-2xl font-semibold text-gray-900 mb-6">Update Tracking Information</h2>
       
-      <form onSubmit={handleSubmit} className="space-y-4 md:space-y-6 max-w-3xl">
+      <form onSubmit={handleSubmit} className="space-y-6 max-w-3xl">
         <div className="space-y-4">
           <div>
-            <label htmlFor="orderNumber" className="block text-xs md:text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="orderNumber" className="block text-sm font-medium text-gray-700 mb-1">
               Order Number
             </label>
             <input
@@ -144,14 +144,14 @@ export default function UpdateTracking() {
               onChange={(e) => setOrderNumber(e.target.value)}
               onKeyDown={handleOrderNumberKeyDown}
               placeholder="Enter order number"
-              className="w-full px-3 py-2 md:px-4 md:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm md:text-base"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               disabled={status === 'submitting'}
               autoFocus
             />
           </div>
           
           <div>
-            <label htmlFor="trackingCode" className="block text-xs md:text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="trackingCode" className="block text-sm font-medium text-gray-700 mb-1">
               Tracking Code
             </label>
             <div className="flex space-x-2">
@@ -163,7 +163,7 @@ export default function UpdateTracking() {
                 onChange={(e) => setTrackingCode(e.target.value)}
                 onKeyDown={handleTrackingKeyDown}
                 placeholder="Scan or enter tracking code"
-                className="flex-1 px-3 py-2 md:px-4 md:py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm md:text-base"
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 disabled={status === 'submitting'}
                 autoComplete="off"
               />
@@ -174,7 +174,7 @@ export default function UpdateTracking() {
                   // On desktop, it will just focus the input
                   document.getElementById('trackingCode')?.focus();
                 }}
-                className="px-3 py-1 md:px-4 md:py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors text-xs md:text-sm"
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors"
               >
                 Scan
               </button>
@@ -182,18 +182,18 @@ export default function UpdateTracking() {
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-center space-y-3 sm:space-y-0 sm:space-x-4">
+        <div className="flex items-center space-x-4">
           <button
             type="submit"
             disabled={status === 'submitting'}
-            className={`w-full sm:w-auto px-4 md:px-6 py-2 rounded-lg font-medium text-white text-sm md:text-base ${
+            className={`px-6 py-2 rounded-lg font-medium text-white ${
               status === 'submitting'
                 ? 'bg-blue-400 cursor-not-allowed'
                 : 'bg-blue-600 hover:bg-blue-700'
             }`}
           >
             {status === 'submitting' ? (
-              <span className="flex items-center justify-center">
+              <span className="flex items-center">
                 <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4" />
                 Updating...
               </span>
@@ -217,8 +217,8 @@ export default function UpdateTracking() {
         </div>
       </form>
       
-      <div className="mt-6 md:mt-8 pt-4 md:pt-6 border-t border-gray-100">
-        <h3 className="text-base md:text-lg font-medium text-gray-900 mb-2 md:mb-3">Recent Tracking Updates</h3>
+      <div className="mt-8 pt-6 border-t border-gray-100">
+        <h3 className="text-lg font-medium text-gray-900 mb-3">Recent Tracking Updates</h3>
         
         {trackingHistory.length > 0 ? (
           <div className="space-y-3">
@@ -227,19 +227,19 @@ export default function UpdateTracking() {
               const formattedDate = `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
               
               return (
-                <div key={index} className="bg-white border border-gray-200 rounded-lg p-2 md:p-3 shadow-sm hover:shadow-md transition-shadow">
+                <div key={index} className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow">
                   <div className="flex flex-col sm:flex-row sm:justify-between">
                     <div className="space-y-1">
-                      <div className="flex items-center gap-1 md:gap-2">
-                        <span className="text-xs md:text-sm font-medium text-gray-900">Order:</span>
-                        <span className="text-xs md:text-sm text-gray-800">{entry.orderNumber}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-gray-900">Order:</span>
+                        <span className="text-gray-800">{entry.orderNumber}</span>
                       </div>
-                      <div className="flex items-center gap-1 md:gap-2">
-                        <span className="text-xs md:text-sm font-medium text-gray-900">Tracking:</span>
-                        <span className="text-xs md:text-sm text-gray-800">{entry.trackingCode}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-gray-900">Tracking:</span>
+                        <span className="text-gray-800">{entry.trackingCode}</span>
                       </div>
                     </div>
-                    <div className="mt-2 sm:mt-0 text-xs md:text-sm text-gray-500">
+                    <div className="mt-2 sm:mt-0 text-sm text-gray-500">
                       {formattedDate}
                     </div>
                   </div>
@@ -248,8 +248,8 @@ export default function UpdateTracking() {
             })}
           </div>
         ) : (
-          <div className="bg-gray-50 p-3 md:p-4 rounded-lg">
-            <p className="text-xs md:text-sm text-gray-600">
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <p className="text-sm text-gray-600">
               No tracking updates yet. Scan a tracking code using your device's barcode scanner or enter it manually.
               The order number and tracking code will be sent to our system and displayed here.
             </p>
@@ -263,7 +263,7 @@ export default function UpdateTracking() {
                 localStorage.removeItem('trackingHistory');
                 setTrackingHistory([]);
               }}
-              className="text-xs md:text-sm text-red-600 hover:text-red-800 px-2 py-1 md:px-3 md:py-1 border border-red-200 rounded-md hover:bg-red-50 transition-colors"
+              className="text-sm text-red-600 hover:text-red-800 px-3 py-1 border border-red-200 rounded-md hover:bg-red-50 transition-colors"
             >
               Clear History
             </button>

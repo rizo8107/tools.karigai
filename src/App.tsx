@@ -1,19 +1,18 @@
 import { useState, useEffect } from 'react';
 import OrderForm from './components/OrderForm';
-import PrintSlip from './components/PrintSlip';
 import UpdateTracking from './components/UpdateTracking';
-import CreateManifest from './components/CreateManifest';
-import RepeatCampaign from './components/RepeatCampaign';
 import OrderList from './components/OrderList';
 import GstInvoiceGenerator from './components/GstInvoice';
 import Auth from './components/Auth';
-import { ArrowRight, Package, Printer, Truck, FileText, Users, List, LogOut, FileSpreadsheet } from 'lucide-react';
+import { ArrowRight, Package, Truck, History, LogOut, FileSpreadsheet, Menu } from 'lucide-react';
 
-type TabType = 'order' | 'printslip' | 'tracking' | 'manifest' | 'campaign' | 'orderlist' | 'gstinvoice';
+
+type TabType = 'order' | 'tracking' | 'orderhistory' | 'gstinvoice';
 
 function App() {
   const [activeTab, setActiveTab] = useState<TabType>('order');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   
   // Check for authentication on component mount
   useEffect(() => {
@@ -25,21 +24,15 @@ function App() {
 
   const navigationItems = [
     { id: 'order', label: 'Order Form', icon: <Package size={20} /> },
-    { id: 'printslip', label: 'Print Slip', icon: <Printer size={20} /> },
     { id: 'tracking', label: 'Update Tracking', icon: <Truck size={20} /> },
-    { id: 'manifest', label: 'Create Manifest', icon: <FileText size={20} /> },
-    { id: 'campaign', label: 'Repeat Campaign', icon: <Users size={20} /> },
-    { id: 'orderlist', label: 'Order List', icon: <List size={20} /> },
+    { id: 'orderhistory', label: 'Order History', icon: <History size={20} /> },
     { id: 'gstinvoice', label: 'GST Invoice', icon: <FileSpreadsheet size={20} /> },
   ];
 
   const pageDescriptions: Record<TabType, string> = {
-    order: 'Please enter your order number to continue',
-    printslip: 'Generate and print courier slips',
+    order: 'Create a new order by filling out the form below',
     tracking: 'Update tracking information for orders',
-    manifest: 'Create and manage shipping manifests',
-    campaign: 'Manage repeat customer campaigns and feedback',
-    orderlist: 'View and manage all manual orders',
+    orderhistory: 'View, filter, and print past orders.',
     gstinvoice: 'Generate GST invoices for orders',
   };
 
@@ -54,77 +47,114 @@ function App() {
     return <Auth onAuthenticated={() => setIsAuthenticated(true)} />;
   }
   
+  // Toggle mobile menu
+  const toggleMobileMenu = () => {
+    setMobileMenuOpen(!mobileMenuOpen);
+  };
+  
   return (
-    <div className="flex h-screen bg-gray-100">
-      {/* Sidebar */}
-      <aside className="w-64 bg-gray-800 text-white p-6 flex flex-col">
-        <h1 className="text-3xl font-bold mb-8 text-center">
-          AuraWill
-        </h1>
-        <nav className="flex-grow">
-          <ul>
-            {navigationItems.map((item) => (
-              <li key={item.id} className="mb-2">
-                <button
-                  onClick={() => setActiveTab(item.id as TabType)}
-                  className={`w-full flex items-center py-3 px-4 rounded-lg transition-colors duration-200 ${                    activeTab === item.id
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                  }`}
-                >
-                  {item.icon}
-                  <span className="ml-3 font-medium">{item.label}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </nav>
-        <button
-          onClick={handleLogout}
-          className="w-full flex items-center py-3 px-4 rounded-lg transition-colors duration-200 text-red-300 hover:bg-red-700 hover:text-white mt-6"
-        >
-          <LogOut size={20} />
-          <span className="ml-3 font-medium">Logout</span>
+    <div className="flex flex-col h-screen bg-gray-100">
+      {/* Mobile Header */}
+      <header className="md:hidden bg-gray-800 text-white p-4 flex justify-between items-center">
+        <h1 className="text-xl font-bold">AuraWill Tools</h1>
+        <button onClick={toggleMobileMenu} className="p-2 rounded-md hover:bg-gray-700">
+          <Menu size={24} />
         </button>
-        <div className="mt-auto text-center text-xs text-gray-400">
-          <p>&copy; {new Date().getFullYear()} AuraWill</p>
+      </header>
+      
+      {/* Mobile Navigation Menu - Only visible when toggled */}
+      {mobileMenuOpen && (
+        <div className="md:hidden bg-gray-800 text-white">
+          <nav className="px-4 py-2">
+            <ul>
+              {navigationItems.map((item) => (
+                <li key={item.id} className="mb-2">
+                  <button
+                    onClick={() => {
+                      setActiveTab(item.id as TabType);
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`w-full flex items-center py-2 px-3 rounded-md transition-colors duration-200 ${activeTab === item.id ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 hover:text-white'}`}
+                  >
+                    {item.icon}
+                    <span className="ml-3 font-medium">{item.label}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </nav>
+          <div className="px-4 py-2 border-t border-gray-700">
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center py-2 px-3 rounded-md text-red-300 hover:bg-red-700 hover:text-white"
+            >
+              <LogOut size={20} />
+              <span className="ml-3 font-medium">Logout</span>
+            </button>
+          </div>
         </div>
-      </aside>
+      )}
+      
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar - Hidden on mobile, visible on md screens and up */}
+        <aside className="hidden md:flex w-64 bg-gray-800 text-white p-4 md:p-6 flex-col">
+          <h1 className="text-2xl md:text-3xl font-bold mb-6 md:mb-8 text-center">
+            AuraWill Tools
+          </h1>
+          <nav className="flex-grow">
+            <ul>
+              {navigationItems.map((item) => (
+                <li key={item.id} className="mb-2">
+                  <button
+                    onClick={() => setActiveTab(item.id as TabType)}
+                    className={`w-full flex items-center py-2 md:py-3 px-3 md:px-4 rounded-lg transition-colors duration-200 ${activeTab === item.id ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 hover:text-white'}`}
+                  >
+                    {item.icon}
+                    <span className="ml-3 font-medium">{item.label}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </nav>
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center py-2 md:py-3 px-3 md:px-4 rounded-lg transition-colors duration-200 text-red-300 hover:bg-red-700 hover:text-white mt-6"
+          >
+            <LogOut size={20} />
+            <span className="ml-3 font-medium">Logout</span>
+          </button>
+          <div className="mt-auto text-center text-xs text-gray-400">
+            <p>&copy; {new Date().getFullYear()} AuraWill</p>
+          </div>
+        </aside>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white shadow-sm p-6">
-          <h2 className="text-2xl font-semibold text-gray-800">{navigationItems.find(item => item.id === activeTab)?.label}</h2>
-          <p className="text-gray-600 mt-1">{pageDescriptions[activeTab]}</p>
-        </header>
-
-        <main className={`flex-grow p-6 overflow-y-auto bg-gray-50 ${ 
-          activeTab === 'order' ? 'flex justify-center items-start' : '' 
-        }`}>
-          <div className={`w-full ${ 
-            activeTab === 'order' ? 'max-w-6xl' : 
-            activeTab === 'tracking' || activeTab === 'manifest' ? 'max-w-3xl' : 
-            activeTab === 'campaign' ? 'max-w-5xl' : 
-            activeTab === 'gstinvoice' ? 'max-w-7xl' : 'max-w-4xl'
-          } mx-auto`}>
+        {/* Main Content */}
+        <main className="flex-1 overflow-y-auto p-3 sm:p-6 lg:p-8">
+          {/* Page Header */}
+          <div className="pb-3 md:pb-5 border-b border-gray-200 mb-4 md:mb-6">
+            <h2 className="text-lg md:text-xl font-semibold text-gray-900">
+              {pageDescriptions[activeTab]}
+            </h2>
+          </div>
+          
+          {/* Component Container */}
+          <div className="w-full mx-auto" style={{ maxWidth: activeTab === 'order' ? '100%' : activeTab === 'tracking' ? '600px' : '100%' }}>
             {activeTab === 'order' && <OrderForm />}
-            {activeTab === 'printslip' && <PrintSlip />}
             {activeTab === 'tracking' && <UpdateTracking />}
-            {activeTab === 'manifest' && <CreateManifest />}
-            {activeTab === 'campaign' && <RepeatCampaign />}
-            {activeTab === 'orderlist' && <OrderList />}
+            {activeTab === 'orderhistory' && <OrderList />}
             {activeTab === 'gstinvoice' && <GstInvoiceGenerator />}
           </div>
         </main>
-        
-        <footer className="bg-white border-t border-gray-200 p-4 text-center text-sm text-gray-500">
-            <div className="flex items-center justify-center gap-1 mb-1">
-              <span>Proceed with confidence</span>
-              <ArrowRight size={14} />
-            </div>
-            <p>All rights reserved.</p>
-        </footer>
       </div>
+      
+      {/* Footer */}
+      <footer className="bg-white border-t border-gray-200 p-3 text-center text-xs md:text-sm text-gray-500">
+        <div className="flex items-center justify-center gap-1 mb-1">
+          <span>Proceed with confidence</span>
+          <ArrowRight size={14} />
+        </div>
+        <p>All rights reserved.</p>
+      </footer>
     </div>
   );
 }
