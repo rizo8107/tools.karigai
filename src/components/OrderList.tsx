@@ -238,6 +238,20 @@ const OrderList = () => {
         const result = await response.json();
         // The API might return an object with a 'data' property which is the array
         const ordersData: Order[] = Array.isArray(result) ? result : result.data || [];
+        
+        // Log the first order to debug
+        if (ordersData.length > 0) {
+          console.log('First order data:', ordersData[0]);
+          console.log('Product data type:', typeof ordersData[0].product);
+          if (ordersData[0].product) {
+            try {
+              console.log('Parsed product:', JSON.parse(ordersData[0].product));
+            } catch (e) {
+              console.log('Could not parse product:', e);
+            }
+          }
+        }
+        
         const sortedOrders = ordersData.sort((a, b) => new Date(b.Date).getTime() - new Date(a.Date).getTime());
         setOrders(sortedOrders);
         setFilteredOrders(sortedOrders);
@@ -528,11 +542,90 @@ const OrderList = () => {
                 <div className="grid grid-cols-2 gap-2 mb-3">
                   <div>
                     <p className="text-xs font-medium text-gray-500">Product</p>
-                    <p className="text-sm">{order.productName}</p>
+                    <p className="text-sm">
+                      {(() => {
+                        // Use the same product display logic as desktop view
+                        if (order.product) {
+                          try {
+                            // Try parsing as array first
+                            const productData = typeof order.product === 'string' ? JSON.parse(order.product) : order.product;
+                            
+                            if (Array.isArray(productData)) {
+                              return productData.length > 1
+                                ? `${productData[0]?.productName || productData[0]?.name || 'N/A'} +${productData.length - 1} more`
+                                : productData[0]?.productName || productData[0]?.name || 'N/A';
+                            } else {
+                              // Single product object
+                              return productData.productName || productData.name || 'N/A';
+                            }
+                          } catch (e) {
+                            // Fallback to legacy field
+                            return order.productName || 'N/A';
+                          }
+                        } else if (order.products) {
+                          try {
+                            const productsData = typeof order.products === 'string' ? JSON.parse(order.products) : order.products;
+                            
+                            if (Array.isArray(productsData)) {
+                              return productsData.length > 1
+                                ? `${productsData[0]?.productName || productsData[0]?.name || 'N/A'} +${productsData.length - 1} more`
+                                : productsData[0]?.productName || productsData[0]?.name || 'N/A';
+                            } else {
+                              return productsData.productName || productsData.name || 'N/A';
+                            }
+                          } catch (e) {
+                            return order.productName || 'N/A';
+                          }
+                        } else {
+                          return order.productName || 'N/A';
+                        }
+                      })()}
+                    </p>
                   </div>
                   <div>
                     <p className="text-xs font-medium text-gray-500">Total</p>
-                    <p className="text-sm font-medium">₹{((order.quantity || 0) * (order.price || 0)).toFixed(2)}</p>
+                    <p className="text-sm font-medium">₹{(() => {
+                      // Use the same total calculation logic as desktop view
+                      if (order.total) {
+                        return parseFloat(order.total).toFixed(2);
+                      }
+                      
+                      let subtotal = 0;
+                      
+                      // Try to calculate from product data
+                      if (order.product) {
+                        try {
+                          const productData = typeof order.product === 'string' ? JSON.parse(order.product) : order.product;
+                          
+                          if (Array.isArray(productData)) {
+                            subtotal = productData.reduce((sum, item) => sum + ((item.quantity || 1) * (item.price || 0)), 0);
+                          } else if (productData) {
+                            subtotal = (productData.quantity || 1) * (productData.price || 0);
+                          }
+                        } catch (e) {
+                          // Fallback to legacy calculation
+                          subtotal = (order.quantity || 0) * (order.price || 0);
+                        }
+                      } else if (order.products) {
+                        try {
+                          const productsData = typeof order.products === 'string' ? JSON.parse(order.products) : order.products;
+                          
+                          if (Array.isArray(productsData)) {
+                            subtotal = productsData.reduce((sum, item) => sum + ((item.quantity || 1) * (item.price || 0)), 0);
+                          } else if (productsData) {
+                            subtotal = (productsData.quantity || 1) * (productsData.price || 0);
+                          }
+                        } catch (e) {
+                          subtotal = (order.quantity || 0) * (order.price || 0);
+                        }
+                      } else {
+                        subtotal = (order.quantity || 0) * (order.price || 0);
+                      }
+                      
+                      // Add shipping cost
+                      const shippingCost = parseFloat(order.shipping_cost) || parseFloat(order.shippingCost) || 0;
+                      return (subtotal + shippingCost).toFixed(2);
+                    })()}</p>
                   </div>
                 </div>
                 
